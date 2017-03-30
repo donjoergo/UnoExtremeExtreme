@@ -6,10 +6,11 @@ The yellow button will be printed in transluzent filament and backlit by two WS2
 
 
 **To compile this project, you will need to install a few additional libraries:**
-  DFRobotDFPlayerMini
+<br />
+  DFRobotDFPlayerMini <br /> 
   FastLED
-  
+<br />
   
 *TODO*
-
+<br />
 Thingiverse file for the button is missing yet.
