@@ -1,7 +1,7 @@
 ### This project turns an Arduino Nano into an advanced controller board for the table game "UNO Extreme / Attack"
 
-As additional hardware components I utilized a L293D motor driver and a DF PlayerMini Sound moule for funny sounds.
-The yellow button will be printed in transluzent filament and backlit by two WS2812b LEDs, lighting up accordingly to the game.
+As additional hardware components I utilized a L293D motor driver and a DFPlayerMini Sound module for funny sounds.
+The big yellow button will be printed in transluzent filament and backlit by two WS2812b LEDs, lighting up accordingly to the game.
 <br /><br />
 
 **To compile this project, you will need to install a few additional libraries:**
