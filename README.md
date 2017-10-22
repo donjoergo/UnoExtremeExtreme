@@ -13,9 +13,4 @@ The big yellow button will be printed in translucent filament and backlit by two
 <br /><br />
   
   
-You can find the file for the button also on <a href="https://www.thingiverse.com/thing:2492998">Thingiverse</a>.   
-  
-*TODO*
-<br />
-Code extend:
-At 1% Chance it will throw out all cards at full speed :)
+You can find the file for the button also on <a href="https://www.thingiverse.com/thing:2492998">Thingiverse</a>.
