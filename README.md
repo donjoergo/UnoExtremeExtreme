@@ -12,7 +12,6 @@ The big yellow button will be printed in translucent filament and backlit by two
   DFRobotDFPlayerMini <br /> 
   FastLED
 <br /><br />
-
-I also made an APP with Thunkable, with which you can chane volume, mode and other settings :)
+I also made an APP with Thunkable, with which you can change volume, mode and other settings :)
   
 You can find the file for the button also on <a href="https://www.thingiverse.com/thing:2492998">Thingiverse</a>.
