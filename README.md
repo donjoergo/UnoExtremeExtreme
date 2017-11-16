@@ -1,4 +1,4 @@
-![UNO](https://github.com/donjoergo/UnoExtremeExtreme/blob/master/UNO_Extreme.jpg "UNO ExtremeExtreme")
+![UNO](https://github.com/donjoergo/UnoExtremeExtreme/blob/master/images/UNO_Extreme.jpg "UNO ExtremeExtreme")
 
 ### This project turns an Arduino Nano into an advanced controller board for the table game "UNO Extreme / Attack"
 
