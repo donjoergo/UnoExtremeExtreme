@@ -33,23 +33,23 @@ void ReadCmd(char ReadChar) {
 
 void checkCmd() {
   if (command == "connect") {
-    BTSoftwareSerial.println("OK");         //acknowledge
+    BTSoftwareSerial.println("OK");         // acknowledge
   }
   else if (command == "end") {
-    PlaySound(7, 2);						//Play Sound "Einstellungen gespeichert"
-    SaveEeprom();						 	//Save to EEPROM
+    PlaySound(7, 2);                        // Play Sound "Einstellungen gespeichert"
+    SaveEeprom();                           // Save to EEPROM
   }
   else if (command == "vol") {
-    VOL = map(parameter, 0, 100, 0, 30);    //Remap the value
-    myDFPlayer.volume(VOL);                 //Set volume value
-    PlaySound(7, 3);                        //Play Sound "Lautstärke geändert"
+    VOL = map(parameter, 0, 100, 0, 30);    // Remap the value
+    myDFPlayer.volume(VOL);                 // Set volume value
+    PlaySound(7, 3);                        // Play Sound "Lautstärke geändert"
   }
   else if (command == "allin") {
     if (parameter == 0) {
       AllIn();
     }
     if (parameter == 1) {
-      allInNext = true;                     //Set AllIn for Next
+      allInNext = true;                     // Set AllIn for Next
     }
   }
   else if (checkBT) {
@@ -57,32 +57,32 @@ void checkCmd() {
     if (command == "mode") {
       switch (parameter) {
         case 0:
-          ModeAscending = false;                //Set NormalMode
+          ModeAscending = false;            // Set NormalMode
           ExtremeMode = false;
           break;
         case 1:
-          ModeAscending = true;                 //Set AscendingMode
+          ModeAscending = true;             // Set AscendingMode
           ExtremeMode = false;
           break;
         case 2:
-          ModeAscending = false;                //Set ExtremeMode
+          ModeAscending = false;            // Set ExtremeMode
           ExtremeMode = true;
           break;
       }
-      PlaySound(7, 2);                         //Play Sound "Einstellungen gespeichert"
+      PlaySound(7, 2);                      // Play Sound "Einstellungen gespeichert"
     }
     else if (command == "normalsounds") {
       if (parameter == 0) {
-        NormalSounds = false;                 //Set FunnySounds
+        NormalSounds = false;               // Set FunnySounds
       }
       else if (parameter == 1) {
-        NormalSounds = true;                  //Set NormalSounds
+        NormalSounds = true;                // Set NormalSounds
       }
-      PlaySound(7, 2);                        //Play Sound "Einstellungen gespeichert"
+      PlaySound(7, 2);                      // Play Sound "Einstellungen gespeichert"
     }
     else if (command == "losechance") {
-      LoseChance = parameter;                 //Set LoseChance
-      PlaySound(7, 2);                      //Play Sound "Einstellungen gespeichert"
+      LoseChance = parameter;               // Set LoseChance
+      PlaySound(7, 2);                      // Play Sound "Einstellungen gespeichert"
     }
   }
 }
