@@ -6,6 +6,7 @@
   |  Date            |Author                     |What is done?                  |
   |  20.02.17        |Jörg Dorlach               |Created                        |
   |  17.09.17        |Jörg Dorlach               |Added BT support               |
+  |  17.04.23        |Jörg Dorlach               |//TODO                         |
   +------------------+---------------------------+-------------------------------+
   |  Version         | V0.1                                                      |
   |  Microcontroller | Atmel Atmega328 (Arduino Nano)                            |
@@ -40,7 +41,9 @@ CRGB leds[NUM_LEDS];                            // define array with NUM_LEDS
 
 /**********************************SETUP*****************************************/
 void setup() {
-  Serial.begin(9600);
+  if (DEBUGGING_ON) {
+    Serial.begin(9600);
+  }
 
   /*RANDOM*/
   randomSeed(analogRead(0));        // Getting better random values
@@ -65,6 +68,11 @@ void setup() {
   dfSoftwareSerial.end();
   BTSoftwareSerial.begin(9600);
   FRG_Btn = true;
+
+  // Perform self test
+  if (bSelfTest) {
+    SelfTest();
+  }
 }
 
 /***********************************LOOP*****************************************/
@@ -88,10 +96,12 @@ void loop() {
         }
         LightLeds(color, 255, 255);                     // Turn LEDs orange
         if (VOL) {
-          PlaySound(6, soundmap[InitSteps][ActStep]);   // Play sound
+          PlaySound(FOLDER_ASCENDING, soundmap[InitSteps][ActStep]);  // Play sound
         }
         ActStep--;
-        Serial.println(color);
+        if (DEBUGGING_ON) {
+          Serial.println(color);
+        }
       }
       else if (ActStep == 0) {                          // Lose
         AscFirstRun = true;                             // Set FirstRun again
@@ -105,7 +115,12 @@ void loop() {
         if (wait < WaitChance) {
           int showWait = random(100);                               // Decide randomly wether to showWait
           if (showWait < ShowWaitChance && VOL && !NormalSounds) {
-            PlaySound(2, random(snds_wait) + 1);                    // Play waiting sound
+            if (bComputerSounds) {
+              PlaySound(FOLDER_WAIT, random(snds_wait) + 1);          // Play waiting sound
+            }
+            else {
+              PlaySound(FOLDER_WAIT_COMPUTER, random(snds_wait) + 1); // Play waiting sound
+            }
             delay(500);                                             // Wait a bit
             /*Blinks LEDs for Time of playing*/
             while (!digitalRead(Busy_PIN)) {
@@ -135,10 +150,13 @@ void loop() {
           LightLeds(100, 255, 255);                                 // Turn LEDs green
           if (VOL) {
             if (NormalSounds) {
-              PlaySound(6, 4); //Play winning sound
+              PlaySound(FOLDER_ASCENDING, SOUND_LOW);               // Play winning sound
+            }
+            if (bComputerSounds) {
+              PlaySound(FOLDER_WIN_COMPUTER, random(snds_win_computer) + 1); // Play winning sound
             }
             else {
-              PlaySound(3, random(snds_win) + 1);               // Play winning sound
+              PlaySound(FOLDER_WIN, random(snds_win) + 1);          // Play winning sound
             }
           }
         }
@@ -154,7 +172,7 @@ void loop() {
   else if (BtnPressed && !checkBT && digitalRead(Safety_PIN)) { // Btn pressed and case open
     checkBT = true;                                             // release BT-checking
     LightLeds(160, 255, 255);                                   // blue
-    PlaySound(7, 1);                                            // Play "BT activated"
+    PlaySound(FOLDER_SETTINGS, SOUND_BT_SETTINGS_ACTIVATED);    // Play "BT activated"
     BtnPressed = false;
     dfSoftwareSerial.end();
     BTSoftwareSerial.begin(9600);                               // Begin COM with HC-05
