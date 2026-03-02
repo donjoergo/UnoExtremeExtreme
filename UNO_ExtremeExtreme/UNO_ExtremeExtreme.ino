@@ -23,21 +23,14 @@
 /*********************************INCLUDE****************************************/
 #include "Arduino.h"                // Standart library
 #include "SoftwareSerial.h"         // Required to communicate with DFPlayer Mini
-#include "DFRobotDFPlayerMini.h"    // Required for playing sounds from the DFPlayer Mini
+#include "DFRobotDFPlayerMini.h"    // Required for playing sounds from the DFPlayer Mini - only version 1.0.5 is working!
 #include "FastLED.h"                // Required for the WS2812B LED stripe
 #include "defines.h"                // Include all defines
+#include "variables.h"
 
 /********************************INITIALISE**************************************/
 
-volatile bool BtnPressed = false;               // Used by interrupt for ButtonState
-
-SoftwareSerial dfSoftwareSerial(DF_RX, DF_TX);  // Initialise COM with the DFPlayer
-SoftwareSerial BTSoftwareSerial(BT_RX, BT_TX);  // Initialise COM with HC-05
-
-DFRobotDFPlayerMini myDFPlayer;                 // define DFPlayer Mini object
-CRGB leds[NUM_LEDS];                            // define array with NUM_LEDS
-
-//void printDetail(uint8_t type, int value);    // define function
+//volatile bool BtnPressed = false;               // Used by interrupt for ButtonState
 
 /**********************************SETUP*****************************************/
 void setup() {
