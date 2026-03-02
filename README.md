@@ -7,10 +7,22 @@ Later I integrated an HC-05 bluetooth module to change settings via phone.
 The big yellow button will be printed in translucent filament and backlit by two WS2812b LEDs, lighting up accordingly to the game.
 <br /><br />
 
-**To compile this project, you will need to install a few additional libraries:**
-<br />
-  DFRobotDFPlayerMini <br /> 
-  FastLED
+### Build With PlatformIO
+
+This project is now configured for PlatformIO via [platformio.ini](platformio.ini).
+
+1. Install PlatformIO Core (CLI) or open the project in VS Code with the PlatformIO extension.
+2. Build:
+   <br />
+   `pio run`
+3. Upload to Arduino Nano:
+   <br />
+   `pio run -t upload`
+4. Open serial monitor:
+   <br />
+   `pio device monitor`
+
+The required libraries (`DFRobotDFPlayerMini` and `FastLED`) are declared in `platformio.ini` and will be installed automatically by PlatformIO.
 <br /><br />
 I also made an APP with Thunkable, with which you can change volume, mode and other settings :)
   

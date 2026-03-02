@@ -1,3 +1,8 @@
+#include "Arduino.h"
+#include "defines.h"
+#include "variables.h"
+#include "functions.h"
+
 /**
  * Plays an initial startup sound after switching the machine on
 */
@@ -52,6 +57,7 @@ void PlaySound(int folder, int sound) {
 /**
  * Reads how much files are on the SD card
 */
+// cppcheck-suppress unusedFunction
 void ReadSoundFileNumbers() {
   
   if (DEBUGGING_ON) {

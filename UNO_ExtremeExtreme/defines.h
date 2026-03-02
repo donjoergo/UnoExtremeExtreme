@@ -3,7 +3,7 @@
 #define DEBUGGING_ON        1  // Enable serial monitor outputs
 #define LOG_LEVEL           3  // 1 = , 2 = , 3 = Highly detailed Log
 #define MOTOR_SPINNING      1  // 1 = motor spinning disabled
-bool bSelfTest = false;        // Perform selftest
+extern bool bSelfTest;         // Perform selftest
 
 
 // enum GameMode {     // Enumeration for the selected game mode
@@ -61,7 +61,7 @@ bool bSelfTest = false;        // Perform selftest
 #define snds_lose_computer        13 // Number of sounds
 #define snds_xtreme_lose_computer 5  // Number of sounds
 #define snds_wait_computer        18  // Number of sounds
-bool InitSound = true;              // TODO Kommentar was ist das?
+extern bool InitSound;              // TODO Kommentar was ist das?
 // const // TODO kombinierte variablen für normal + computer sounds
 
 

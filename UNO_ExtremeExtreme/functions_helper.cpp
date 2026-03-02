@@ -1,3 +1,8 @@
+#include "Arduino.h"
+#include "defines.h"
+#include "variables.h"
+#include "functions.h"
+
 /**
  * Performs an self test
  * Plays all sounds and see if it is playable
@@ -35,6 +40,7 @@ void SelfTest() {
 /**
  * //TODO Diese Funktion sollte wohl mal verwendet werden; Ist das Kunst oder kann das weg
 */
+// cppcheck-suppress unusedFunction
 void LoadEeprom() {
 
 }
