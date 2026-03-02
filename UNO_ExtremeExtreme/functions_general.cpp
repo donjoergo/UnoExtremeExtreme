@@ -1,3 +1,8 @@
+#include "Arduino.h"
+#include "defines.h"
+#include "variables.h"
+#include "functions.h"
+
 /**********************************FUNCTIONS*************************************/
 
 /**
@@ -26,7 +31,7 @@ void DoLose(int sound) {
     }
 
     /*SOUND*/
-    int folder;                                 // Define local variable
+    int folder = FOLDER_LOSE;                   // Define local variable
     if (VOL) {
       if (sound != 0) {
         folder = FOLDER_ASCENDING;              // Set normal sound folder
@@ -53,9 +58,10 @@ void DoLose(int sound) {
               folder = FOLDER_LOSE_COMPUTER;               // Set lose sound folder
               sound = random(snds_lose_computer) + 1;      // Choose a random lose sound
             }
-            else 
+            else {
               folder = FOLDER_LOSE;                       // Set lose sound folder
               sound = random(snds_lose) + 1;              // Choose a random lose sound
+            }
           }
         }
       }
@@ -66,7 +72,7 @@ void DoLose(int sound) {
 
     // When the sound folder is extreme 
     // For some sounds we have to wait a specific time before continuing
-    if (folder == FOLDER_EXTREME_LOSE) {
+    if (VOL && folder == FOLDER_EXTREME_LOSE) {
       switch (sound) {
         case SOUND_RUMBLE:
           delay(3000);

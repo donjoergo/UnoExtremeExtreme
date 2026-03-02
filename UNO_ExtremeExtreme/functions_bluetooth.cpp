@@ -1,3 +1,8 @@
+#include "Arduino.h"
+#include "defines.h"
+#include "variables.h"
+#include "functions.h"
+
 /**
  * Checks the bluetooth serial connection for new commands
 */
@@ -13,7 +18,7 @@ void CheckBT() {
         if (ReadChar != ')') {
           buf += ReadChar;
         }
-        else if (ReadChar == ')') {
+        else {
           parameter = atoi(buf.c_str());
           buf = "";
           msgComplete = true;

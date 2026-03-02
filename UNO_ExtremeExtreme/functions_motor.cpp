@@ -1,3 +1,7 @@
+#include "Arduino.h"
+#include "defines.h"
+#include "variables.h"
+#include "functions.h"
 
 /**********************************MOTOR*FUNCTIONS*******************************/
 
@@ -42,7 +46,8 @@ void DriveMotor(int tempo, int duration) {
 */
 int getMotorSpeed() {
   int SpeedSel = random(100);
-  int range, offset;
+  int range = 0;
+  int offset = 0;
   if (SpeedSel < LowSpdChance) {
     range = 49;
     offset = 120;
@@ -51,7 +56,7 @@ int getMotorSpeed() {
     range = 90;
     offset = 150;
   }
-  else if (SpeedSel > (LowSpdChance + MidSpdChance)) {
+  else {
     range = 16;
     offset = 240;
   }
@@ -66,7 +71,8 @@ int getMotorSpeed() {
 */
 int getMotorDuration() {
   int SpeedSel = random(100);
-  int range, offset;
+  int range = 0;
+  int offset = 0;
   if (SpeedSel < ShortTmChance) {
     range = 51;
     offset = 50;
@@ -75,7 +81,7 @@ int getMotorDuration() {
     range = 251;
     offset = 100;
   }
-  else if (SpeedSel > (ShortTmChance + MidTmChance)) {
+  else {
     range = 651;
     offset = 350;
   }

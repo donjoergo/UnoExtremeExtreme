@@ -28,11 +28,10 @@
 #include "defines.h"                // Include all defines
 #include "variables.h"
 
-/********************************INITIALISE**************************************/
-
-//volatile bool BtnPressed = false;               // Used by interrupt for ButtonState
+#include "functions.h"
 
 /**********************************SETUP*****************************************/
+// cppcheck-suppress unusedFunction
 void setup() {
   if (DEBUGGING_ON) {
     Serial.begin(9600);
@@ -69,6 +68,7 @@ void setup() {
 }
 
 /***********************************LOOP*****************************************/
+// cppcheck-suppress unusedFunction
 void loop() {
   if (BtnPressed && !digitalRead(Safety_PIN)) {
     FRG_Btn = false;
@@ -135,7 +135,7 @@ void loop() {
         allInNext = false;                                          // Reset variable
       }
       else {
-        int lose = random(100);                                     // Decide randomly wether to win
+        unsigned int lose = random(100);                            // Decide randomly wether to win
         if (lose < LoseChance) {
           DoLose(0);                                                // Call the DoLose function
         }
