@@ -1,9 +1,9 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-Firmware sources live in `UNO_ExtremeExtreme/` (configured as `src_dir` in `platformio.ini`).  
-Main control flow is in `UNO_ExtremeExtreme.cpp` (`setup()` / `loop()`), while domain logic is split into modules such as `functions_general.cpp`, `functions_motor.cpp`, `function_sounds.cpp`, and `functions_bluetooth.cpp`.  
-Shared interfaces and globals are organized via `functions.h`, `variables.h`, `defines.h`, and `globals.cpp`.
+Firmware sources live in `src/` and shared headers in `include/` (default PlatformIO layout).  
+Main control flow is in `src/UNO_ExtremeExtreme.cpp` (`setup()` / `loop()`), while domain logic is split into modules such as `functions_general.cpp`, `functions_motor.cpp`, `function_sounds.cpp`, and `functions_bluetooth.cpp`.  
+Shared interfaces and globals are organized via `include/functions.h`, `include/variables.h`, `include/defines.h`, and `src/globals.cpp`.
 
 Non-firmware artifacts are kept separately:
 - `App-Files/` for mobile app assets (`.aia`, `.apk`)
