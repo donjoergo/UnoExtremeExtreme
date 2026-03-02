@@ -3,15 +3,21 @@
 
 /**
  * Drives the motor with a given speed and duration
+ * @param tempo How fast should the motor spin
+ * @param duration How long should the motor spin
 */
 void DriveMotor(int tempo, int duration) {
   if (DEBUGGING_ON) {
-    if (tempo < 150) {                        // If BEGIN (boosts motor to get started)
+    Serial.println((String)"[Spin motor] tempo: " + tempo + ", duration: " + duration + "ms");
+  }
+  if (MOTOR_SPINNING) {
+    // If the speed is very slow, the motor get boosted quickly to get spinning
+    if (tempo < MOTOR_BOOST_THRESHOLD) {
       digitalWrite(IN1_PIN, LOW);             // Set forward direction
       digitalWrite(IN2_PIN, HIGH);            // Set forward direction
-      analogWrite(EN_PIN, 170);               // Set medium speed
-      delay(50);                              // Wait 50ms
-    }                                         // If END
+      analogWrite(EN_PIN, MOTOR_BOOST_SPEED); // Set medium speed
+      delay(MOTOR_BOOST_TIME);                // Wait
+    }
     //Forward as long as duration
     digitalWrite(IN1_PIN, LOW);               // Set forward direction
     digitalWrite(IN2_PIN, HIGH);              // Set forward direction
@@ -25,13 +31,9 @@ void DriveMotor(int tempo, int duration) {
     delay(ReverseTime);                       // Wait for time of ReverseTime
 
     //Soft Brake
-    analogWrite(EN_PIN, 0);                   // Set speed
+    analogWrite(EN_PIN, 0);                   // Soft brake
   }
-  if (DEBUGGING_ON) {
-    Serial.println(tempo);
-    Serial.println(duration);
-  }
-}                                           // Function END
+}
 
 /**
  * Outputs the motor speed
