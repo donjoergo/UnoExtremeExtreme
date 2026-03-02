@@ -62,6 +62,7 @@
 
 
 ## Hardware
+- [ ] ESP32 mit Website zur Konfiguration
 - [ ] Wackelkontakt bei den LEDs beheben
 - [ ] Button vom Case entprellt (evtl. auch mit Software)
 - [ ] Schiebeschalter zur Moduswahl (Normaler Modus, Extremer Modus)
