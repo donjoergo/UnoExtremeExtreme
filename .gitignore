@@ -1,3 +1,5 @@
 /.vscode/*
 /.pio/
 /.pio-core/
+/compile_commands.json
+/Sd_Card/
