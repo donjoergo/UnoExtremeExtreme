@@ -1,0 +1,12 @@
+{
+  "name": "platform_nano",
+  "version": "0.1.0",
+  "dependencies": [
+    {
+      "name": "DFRobotDFPlayerMini"
+    },
+    {
+      "name": "FastLED"
+    }
+  ]
+}

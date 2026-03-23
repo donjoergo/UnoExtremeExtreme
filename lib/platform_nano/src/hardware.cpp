@@ -1,6 +1,9 @@
 #include "platform_nano/hardware.h"
 
 #include <Arduino.h>
+#include <DFRobotDFPlayerMini.h>
+#include <FastLED.h>
+#include <SoftwareSerial.h>
 
 #include "config/pins_nano.h"
 
@@ -14,6 +17,16 @@ void applyFeedback(FeedbackState state);
 namespace {
 
 constexpr uint8_t kEventQueueSize = 8;
+constexpr uint8_t kLedCount = 2;
+constexpr uint8_t kLedBrightness = 255;
+constexpr uint8_t kMotorBoostThreshold = 150;
+constexpr uint8_t kMotorBoostSpeed = 170;
+constexpr uint16_t kMotorBoostTimeMs = 50;
+constexpr uint16_t kMotorCheckIntervalMs = 5;
+
+SoftwareSerial g_df_serial(config::kDfPlayerRxPin, config::kDfPlayerTxPin);
+DFRobotDFPlayerMini g_df_player;
+CRGB g_leds[kLedCount];
 
 struct DebounceChannel {
   bool raw_state;
@@ -31,6 +44,8 @@ struct EventQueue {
 
 RuntimeConfig g_runtime_config;
 bool g_has_runtime_config = false;
+bool g_audio_available = false;
+bool g_leds_initialized = false;
 DebounceChannel g_button_channel = {true, true, 0, 40};
 DebounceChannel g_case_channel = {true, true, 0, 60};
 EventQueue g_event_queue = {{}, 0, 0, 0};
@@ -42,6 +57,15 @@ bool readButtonRaw() {
 
 bool readCaseClosedRaw() {
   return digitalRead(config::kCaseSwitchPin) == LOW;
+}
+
+void pushEvent(InputEventType type, uint32_t timestamp_ms, bool case_closed);
+
+void setCaseOpenImmediately(uint32_t now_ms) {
+  g_case_channel.raw_state = false;
+  g_case_channel.debounced_state = false;
+  g_case_channel.last_raw_change_ms = now_ms;
+  pushEvent(InputEventType::CaseOpened, now_ms, false);
 }
 
 void pushEvent(InputEventType type, uint32_t timestamp_ms, bool case_closed) {
@@ -128,8 +152,10 @@ void initializeCaseSwitch() {
 }
 
 void initializeLeds() {
-  pinMode(config::kLedDataPin, OUTPUT);
-  digitalWrite(config::kLedDataPin, LOW);
+  FastLED.addLeds<WS2812B, config::kLedDataPin, GRB>(g_leds, kLedCount);
+  FastLED.setBrightness(kLedBrightness);
+  g_leds_initialized = true;
+  setLedOff();
 }
 
 void initializeMotor() {
@@ -141,10 +167,13 @@ void initializeMotor() {
 
 void initializeAudio() {
   pinMode(config::kDfPlayerBusyPin, INPUT);
-  pinMode(config::kDfPlayerRxPin, INPUT);
-  pinMode(config::kDfPlayerTxPin, INPUT);
   pinMode(config::kBluetoothRxPin, INPUT);
   pinMode(config::kBluetoothTxPin, INPUT);
+  g_df_serial.begin(9600);
+  g_audio_available = g_df_player.begin(g_df_serial);
+  if (g_audio_available) {
+    setMasterVolume(g_runtime_config.master_volume);
+  }
 }
 
 void initializeStorage() {
@@ -171,26 +200,134 @@ void applySafeIdle() {
 }
 
 void setLedOff() {
-  digitalWrite(config::kLedDataPin, LOW);
+  setLedRgb(0, 0, 0);
 }
 
 void setLedRgb(uint8_t red, uint8_t green, uint8_t blue) {
-  (void)red;
-  (void)green;
-  (void)blue;
+  if (!g_leds_initialized) {
+    return;
+  }
+
+  for (uint8_t index = 0; index < kLedCount; ++index) {
+    g_leds[index] = CRGB(red, green, blue);
+  }
+  FastLED.show();
 }
 
 void applyFeedback(FeedbackState state) {
   switch (state) {
     case FeedbackState::Ready:
-    case FeedbackState::Placeholder:
-      setLedOff();
+      setLedRgb(0, 48, 0);
       break;
     case FeedbackState::Maintenance:
+      setLedRgb(0, 0, 48);
+      break;
     case FeedbackState::Warning:
-      setLedOff();
+      setLedRgb(64, 24, 0);
+      break;
+    case FeedbackState::Placeholder:
+      setLedRgb(48, 0, 48);
+      break;
+    case FeedbackState::Active:
+      setLedRgb(48, 48, 48);
       break;
   }
+}
+
+void setMasterVolume(uint8_t volume) {
+  if (!g_audio_available) {
+    return;
+  }
+
+  if (volume > 30u) {
+    volume = 30u;
+  }
+  g_df_player.volume(volume);
+}
+
+bool playFolderSound(uint8_t folder, uint8_t file_index) {
+  if (!g_audio_available) {
+    return false;
+  }
+
+  setMasterVolume(g_runtime_config.master_volume);
+  g_df_player.playFolder(folder, file_index);
+  return true;
+}
+
+bool waitForPlaybackStart(uint32_t timeout_ms) {
+  if (!g_audio_available) {
+    return false;
+  }
+
+  const uint32_t start_ms = millis();
+  while ((millis() - start_ms) < timeout_ms) {
+    if (digitalRead(config::kDfPlayerBusyPin) == LOW) {
+      return true;
+    }
+    delay(10);
+  }
+
+  return false;
+}
+
+void waitForPlaybackFinish(uint32_t timeout_ms) {
+  if (!g_audio_available) {
+    return;
+  }
+
+  const bool playback_started = waitForPlaybackStart(250);
+  if (!playback_started) {
+    return;
+  }
+
+  const uint32_t start_ms = millis();
+  while ((millis() - start_ms) < timeout_ms) {
+    if (digitalRead(config::kDfPlayerBusyPin) != LOW) {
+      return;
+    }
+    delay(10);
+  }
+}
+
+bool runMotorSegment(bool forward, uint8_t speed, uint16_t duration_ms) {
+  if (!readCaseClosedRaw()) {
+    setCaseOpenImmediately(millis());
+    applySafeIdle();
+    return false;
+  }
+
+  if (forward && speed < kMotorBoostThreshold) {
+    digitalWrite(config::kMotorIn1Pin, LOW);
+    digitalWrite(config::kMotorIn2Pin, HIGH);
+    analogWrite(config::kMotorEnablePin, kMotorBoostSpeed);
+    delay(kMotorBoostTimeMs);
+  }
+
+  digitalWrite(config::kMotorIn1Pin, forward ? LOW : HIGH);
+  digitalWrite(config::kMotorIn2Pin, forward ? HIGH : LOW);
+  analogWrite(config::kMotorEnablePin, speed);
+
+  const uint32_t start_ms = millis();
+  while ((millis() - start_ms) < duration_ms) {
+    if (!readCaseClosedRaw()) {
+      setCaseOpenImmediately(millis());
+      applySafeIdle();
+      return false;
+    }
+    delay(kMotorCheckIntervalMs);
+  }
+
+  applySafeIdle();
+  return true;
+}
+
+bool runMotorForward(uint8_t speed, uint16_t duration_ms) {
+  return runMotorSegment(true, speed, duration_ms);
+}
+
+bool runMotorReverse(uint8_t speed, uint16_t duration_ms) {
+  return runMotorSegment(false, speed, duration_ms);
 }
 
 bool isCaseClosed() {
