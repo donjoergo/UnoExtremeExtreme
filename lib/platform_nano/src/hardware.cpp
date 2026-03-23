@@ -60,6 +60,8 @@ bool readCaseClosedRaw() {
 }
 
 void pushEvent(InputEventType type, uint32_t timestamp_ms, bool case_closed);
+void updateButtonDebounce(bool raw_state, uint32_t now_ms, bool case_closed);
+void updateCaseDebounce(bool raw_state, uint32_t now_ms);
 
 void setCaseOpenImmediately(uint32_t now_ms) {
   g_case_channel.raw_state = false;
@@ -85,6 +87,13 @@ void configureDebounceChannel(DebounceChannel& channel, bool raw_state, uint16_t
   channel.debounced_state = raw_state;
   channel.last_raw_change_ms = now_ms;
   channel.debounce_window_ms = debounce_window_ms;
+}
+
+void sampleAndQueueInputs(const uint32_t now_ms) {
+  const bool button_raw = readButtonRaw();
+  const bool case_closed_raw = readCaseClosedRaw();
+  updateButtonDebounce(button_raw, now_ms, g_case_channel.debounced_state);
+  updateCaseDebounce(case_closed_raw, now_ms);
 }
 
 void syncDebounceWindows(const RuntimeConfig& config) {
@@ -142,6 +151,8 @@ void initializeDebounceState() {
 }
 
 }  // namespace
+
+bool isPlaybackActive();
 
 void initializeButton() {
   pinMode(config::kButtonPin, INPUT_PULLUP);
@@ -262,7 +273,7 @@ bool waitForPlaybackStart(uint32_t timeout_ms) {
 
   const uint32_t start_ms = millis();
   while ((millis() - start_ms) < timeout_ms) {
-    if (digitalRead(config::kDfPlayerBusyPin) == LOW) {
+    if (isPlaybackActive()) {
       return true;
     }
     delay(10);
@@ -283,11 +294,34 @@ void waitForPlaybackFinish(uint32_t timeout_ms) {
 
   const uint32_t start_ms = millis();
   while ((millis() - start_ms) < timeout_ms) {
-    if (digitalRead(config::kDfPlayerBusyPin) != LOW) {
+    if (!isPlaybackActive()) {
       return;
     }
     delay(10);
   }
+}
+
+bool isPlaybackActive() {
+  if (!g_audio_available) {
+    return false;
+  }
+
+  return digitalRead(config::kDfPlayerBusyPin) == LOW;
+}
+
+bool waitMilliseconds(const uint16_t duration_ms) {
+  const uint32_t start_ms = millis();
+  while ((millis() - start_ms) < duration_ms) {
+    tick();
+    if (!readCaseClosedRaw()) {
+      setCaseOpenImmediately(millis());
+      applySafeIdle();
+      return false;
+    }
+    delay(kMotorCheckIntervalMs);
+  }
+
+  return true;
 }
 
 bool runMotorSegment(bool forward, uint8_t speed, uint16_t duration_ms) {
@@ -310,6 +344,7 @@ bool runMotorSegment(bool forward, uint8_t speed, uint16_t duration_ms) {
 
   const uint32_t start_ms = millis();
   while ((millis() - start_ms) < duration_ms) {
+    tick();
     if (!readCaseClosedRaw()) {
       setCaseOpenImmediately(millis());
       applySafeIdle();
@@ -342,11 +377,7 @@ InputEvent pollInputEvent(uint32_t now_ms, const RuntimeConfig& config) {
   g_runtime_config = config;
   g_has_runtime_config = true;
   syncDebounceWindows(config);
-
-  const bool button_raw = readButtonRaw();
-  const bool case_closed_raw = readCaseClosedRaw();
-  updateButtonDebounce(button_raw, now_ms, g_case_channel.debounced_state);
-  updateCaseDebounce(case_closed_raw, now_ms);
+  sampleAndQueueInputs(now_ms);
 
   InputEvent event = {InputEventType::None, now_ms, g_case_channel.debounced_state};
   if (g_event_queue.count == 0) {
@@ -375,8 +406,7 @@ void tick() {
   }
 
   g_last_tick_ms = now_ms;
-
-  (void)pollInputEvent(now_ms, g_runtime_config);
+  sampleAndQueueInputs(now_ms);
 }
 
 }  // namespace platform_nano

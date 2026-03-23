@@ -49,6 +49,8 @@ void setMasterVolume(uint8_t volume);
 bool playFolderSound(uint8_t folder, uint8_t file_index);
 bool waitForPlaybackStart(uint32_t timeout_ms);
 void waitForPlaybackFinish(uint32_t timeout_ms);
+bool isPlaybackActive();
+bool waitMilliseconds(uint16_t duration_ms);
 bool runMotorForward(uint8_t speed, uint16_t duration_ms);
 bool runMotorReverse(uint8_t speed, uint16_t duration_ms);
 bool isCaseClosed();

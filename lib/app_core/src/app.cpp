@@ -3,6 +3,7 @@
 #include <Arduino.h>
 
 #include "config/defaults.h"
+#include "domain_motion/motion_catalog.h"
 #include "domain_sound/sound_catalog.h"
 #include "platform_nano/hardware.h"
 
@@ -16,12 +17,20 @@ constexpr uint16_t kSafeForwardDurationMs = 140;
 constexpr uint8_t kLoseForwardSpeed = 240;
 constexpr uint16_t kLoseForwardDurationMs = 220;
 constexpr uint16_t kActionLeadDelayMs = 150;
+constexpr uint8_t kMinimumForwardSpeed = 120;
+constexpr uint16_t kMinimumForwardDurationMs = 25;
+constexpr uint16_t kActionPollIntervalMs = 10;
 constexpr uint16_t kLifecyclePlaybackTimeoutMs = 5000;
 constexpr uint16_t kGameplayPlaybackTimeoutMs = 5000;
+constexpr uint16_t kSpamPlaybackTimeoutMs = 3000;
 
 struct AppContext {
   RuntimeConfig runtime_config;
   RuntimeStatus runtime_status;
+  domain_motion::MotionPressHistory motion_press_history;
+  domain_motion::MotionSelectorState motion_selector_state;
+  bool pending_spam_reaction;
+  bool spam_reaction_played;
 };
 
 AppContext g_app_context = {
@@ -37,10 +46,16 @@ AppContext g_app_context = {
     0,
     0,
     ActionType::Startup
-  }
+  },
+  {{0}, 0},
+  {0, 0},
+  false,
+  false
 };
 
 void handleCaseOpened(uint32_t now_ms);
+void processQueuedActionEvents();
+bool actionCanContinue();
 
 RuntimeState readyStateForMode(const GameMode game_mode) {
   if (game_mode == GameMode::Extreme) {
@@ -58,6 +73,39 @@ void recordLifecycleAction(const ActionType action_type) {
 uint32_t nextSoundRoll() {
   return (static_cast<uint32_t>(random(32768L)) << 16) |
       static_cast<uint32_t>(random(32768L));
+}
+
+void recordPressActivity(const uint32_t now_ms) {
+  domain_motion::recordPress(g_app_context.motion_press_history, now_ms);
+}
+
+uint8_t scaleForwardSpeed(const uint8_t base_speed, const uint8_t intensity_percent) {
+  if (intensity_percent >= 100u) {
+    return base_speed;
+  }
+
+  uint16_t scaled_speed =
+      static_cast<uint16_t>(base_speed) * static_cast<uint16_t>(intensity_percent) / 100u;
+  if (scaled_speed < kMinimumForwardSpeed) {
+    scaled_speed = kMinimumForwardSpeed;
+  }
+  if (scaled_speed > 255u) {
+    scaled_speed = 255u;
+  }
+  return static_cast<uint8_t>(scaled_speed);
+}
+
+uint16_t scaleForwardDuration(const uint16_t base_duration_ms, const uint8_t intensity_percent) {
+  if (intensity_percent >= 100u) {
+    return base_duration_ms;
+  }
+
+  uint32_t scaled_duration =
+      static_cast<uint32_t>(base_duration_ms) * static_cast<uint32_t>(intensity_percent) / 100u;
+  if (scaled_duration < kMinimumForwardDurationMs) {
+    scaled_duration = kMinimumForwardDurationMs;
+  }
+  return static_cast<uint16_t>(scaled_duration);
 }
 
 domain_sound::SoundSelection invalidSoundSelection() {
@@ -95,15 +143,31 @@ bool startSoundPlayback(const domain_sound::SoundSelection& selection) {
       selection.item.file_index);
 }
 
-void refreshStateFromHardware(const uint32_t now_ms) {
-  if (platform_nano::isCaseClosed()) {
-    g_app_context.runtime_status.case_closed = true;
-    return;
-  }
+domain_motion::MotionSelection fallbackMotionSelection(
+    const ActionType resolved_action,
+    const uint8_t intensity_percent) {
+  const bool is_lose = resolved_action == ActionType::Lose;
+  const uint8_t speed = is_lose ? kLoseForwardSpeed : kSafeForwardSpeed;
+  const uint16_t duration_ms = is_lose ? kLoseForwardDurationMs : kSafeForwardDurationMs;
 
-  if (g_app_context.runtime_status.case_closed) {
-    handleCaseOpened(now_ms);
-  }
+  domain_motion::MotionSelection selection = {
+    true,
+    {
+      9000,
+      domain_motion::MotionPatternKind::VariableSpeed,
+      toActionMask(resolved_action),
+      100,
+      1,
+      {
+        {domain_motion::MotionDirection::Forward, speed, duration_ms, 0},
+        {domain_motion::MotionDirection::Stop, 0, 0, 0},
+        {domain_motion::MotionDirection::Stop, 0, 0, 0},
+        {domain_motion::MotionDirection::Stop, 0, 0, 0}
+      }
+    },
+    intensity_percent
+  };
+  return selection;
 }
 
 void renderState(const RuntimeState state) {
@@ -172,23 +236,203 @@ void handleCaseClosed(const uint32_t now_ms) {
   playLifecycleFeedback(ActionType::CaseClosed, readyStateForMode(g_app_context.runtime_config.game_mode));
 }
 
-void runRetraction() {
-  delay(20);
-  const bool retraction_completed = platform_nano::runMotorReverse(
-      g_app_context.runtime_config.retraction_speed,
-      g_app_context.runtime_config.retraction_duration_ms);
-  if (!retraction_completed) {
-    refreshStateFromHardware(millis());
+void markCaseOpenedDuringAction(const uint32_t now_ms) {
+  if (!g_app_context.runtime_status.case_closed) {
+    return;
+  }
+
+  g_app_context.runtime_status.case_closed = false;
+  g_app_context.runtime_status.case_open_since_ms = now_ms;
+  g_app_context.runtime_status.last_open_warning_ms = 0;
+  recordLifecycleAction(ActionType::CaseOpened);
+  transitionToState(RuntimeState::MaintenanceOpen, now_ms);
+}
+
+void queueSpamReaction(const uint32_t now_ms) {
+  recordPressActivity(now_ms);
+  if (g_app_context.runtime_status.state != RuntimeState::ActionRunning ||
+      !g_app_context.runtime_status.case_closed) {
+    return;
+  }
+
+  if (g_app_context.spam_reaction_played) {
+    return;
+  }
+
+  g_app_context.pending_spam_reaction = true;
+}
+
+bool actionCanContinue() {
+  return g_app_context.runtime_status.state == RuntimeState::ActionRunning &&
+      g_app_context.runtime_status.case_closed;
+}
+
+void processActionEvent(const platform_nano::InputEvent& event) {
+  switch (event.type) {
+    case platform_nano::InputEventType::None:
+      break;
+    case platform_nano::InputEventType::ButtonPressed:
+      if (g_app_context.runtime_status.case_closed) {
+        queueSpamReaction(event.timestamp_ms);
+      }
+      break;
+    case platform_nano::InputEventType::CaseOpened:
+      markCaseOpenedDuringAction(event.timestamp_ms);
+      break;
+    case platform_nano::InputEventType::CaseClosed:
+      g_app_context.runtime_status.case_closed = true;
+      g_app_context.runtime_status.case_open_since_ms = 0;
+      g_app_context.runtime_status.last_open_warning_ms = 0;
+      break;
   }
 }
 
-void executeExtremeAction(const ActionType resolved_action) {
-  const uint32_t now_ms = millis();
-  transitionToState(RuntimeState::ActionRunning, now_ms);
+void processQueuedActionEvents() {
+  uint32_t now_ms = millis();
+  platform_nano::InputEvent event = platform_nano::pollInputEvent(now_ms, g_app_context.runtime_config);
+  while (event.type != platform_nano::InputEventType::None) {
+    processActionEvent(event);
+    now_ms = millis();
+    event = platform_nano::pollInputEvent(now_ms, g_app_context.runtime_config);
+  }
+}
 
-  const bool is_lose = resolved_action == ActionType::Lose;
-  const uint8_t speed = is_lose ? kLoseForwardSpeed : kSafeForwardSpeed;
-  const uint16_t duration_ms = is_lose ? kLoseForwardDurationMs : kSafeForwardDurationMs;
+bool executeMotionSegment(
+    const domain_motion::MotionSegment& segment,
+    const uint8_t intensity_percent) {
+  switch (segment.direction) {
+    case domain_motion::MotionDirection::Forward:
+      return platform_nano::runMotorForward(
+          scaleForwardSpeed(segment.speed, intensity_percent),
+          scaleForwardDuration(segment.duration_ms, intensity_percent));
+    case domain_motion::MotionDirection::Reverse:
+      return platform_nano::runMotorReverse(segment.speed, segment.duration_ms);
+    case domain_motion::MotionDirection::Stop:
+      return platform_nano::waitMilliseconds(segment.duration_ms);
+  }
+
+  return false;
+}
+
+bool executeMotionPattern(const domain_motion::MotionSelection& motion_selection) {
+  for (uint8_t index = 0; index < motion_selection.pattern.segment_count; ++index) {
+    const domain_motion::MotionSegment& segment = motion_selection.pattern.segments[index];
+    if (!executeMotionSegment(segment, motion_selection.intensity_percent)) {
+      processQueuedActionEvents();
+      return false;
+    }
+
+    processQueuedActionEvents();
+    if (!actionCanContinue()) {
+      return false;
+    }
+
+    transitionToState(RuntimeState::ActionRunning, millis());
+
+    if (segment.pause_after_ms == 0) {
+      continue;
+    }
+
+    if (!platform_nano::waitMilliseconds(segment.pause_after_ms)) {
+      processQueuedActionEvents();
+      return false;
+    }
+
+    processQueuedActionEvents();
+    if (!actionCanContinue()) {
+      return false;
+    }
+
+    transitionToState(RuntimeState::ActionRunning, millis());
+  }
+
+  return true;
+}
+
+bool waitForGameplayPlaybackTail(const bool sound_started) {
+  if (!sound_started) {
+    return true;
+  }
+
+  const uint32_t start_ms = millis();
+  while ((millis() - start_ms) < kGameplayPlaybackTimeoutMs) {
+    processQueuedActionEvents();
+    if (!platform_nano::isPlaybackActive()) {
+      return true;
+    }
+    delay(kActionPollIntervalMs);
+  }
+
+  return false;
+}
+
+void playPendingSpamReaction() {
+  if (!g_app_context.pending_spam_reaction || g_app_context.spam_reaction_played) {
+    return;
+  }
+
+  if (g_app_context.runtime_status.state != RuntimeState::ActionRunning ||
+      !g_app_context.runtime_status.case_closed) {
+    g_app_context.pending_spam_reaction = false;
+    return;
+  }
+
+  g_app_context.pending_spam_reaction = false;
+  g_app_context.spam_reaction_played = true;
+  recordLifecycleAction(ActionType::SpamReaction);
+
+  const domain_sound::SoundSelection selection =
+      domain_sound::chooseSpamReactionSound(g_app_context.runtime_config, nextSoundRoll());
+  if (!selection.valid) {
+    return;
+  }
+
+  transitionToState(RuntimeState::ActionRunning, millis());
+  if (!startSoundPlayback(selection)) {
+    return;
+  }
+
+  const uint32_t start_ms = millis();
+  while ((millis() - start_ms) < kSpamPlaybackTimeoutMs) {
+    processQueuedActionEvents();
+    if (!platform_nano::isPlaybackActive()) {
+      return;
+    }
+    delay(kActionPollIntervalMs);
+  }
+}
+
+bool runRetraction() {
+  if (!platform_nano::waitMilliseconds(20)) {
+    processQueuedActionEvents();
+    return false;
+  }
+
+  const bool retraction_completed = platform_nano::runMotorReverse(
+      g_app_context.runtime_config.retraction_speed,
+      g_app_context.runtime_config.retraction_duration_ms);
+  processQueuedActionEvents();
+  return retraction_completed;
+}
+
+void executeExtremeAction(const ActionType resolved_action, const uint32_t trigger_ms) {
+  g_app_context.pending_spam_reaction = false;
+  g_app_context.spam_reaction_played = false;
+
+  const uint8_t intensity_percent = domain_motion::computeIntensity(
+      g_app_context.runtime_config,
+      g_app_context.motion_press_history,
+      trigger_ms);
+  domain_motion::MotionSelection motion_selection = domain_motion::choosePattern(
+      resolved_action,
+      nextSoundRoll(),
+      g_app_context.motion_selector_state,
+      intensity_percent);
+  if (!motion_selection.valid) {
+    motion_selection = fallbackMotionSelection(resolved_action, intensity_percent);
+  }
+
+  transitionToState(RuntimeState::ActionRunning, millis());
 
   const domain_sound::SoundSelection sound_selection =
       domain_sound::chooseGameplaySound(g_app_context.runtime_config, resolved_action, nextSoundRoll());
@@ -197,18 +441,23 @@ void executeExtremeAction(const ActionType resolved_action) {
     (void)platform_nano::waitForPlaybackStart(250);
   }
 
-  delay(kActionLeadDelayMs);
-
-  const bool forward_completed = platform_nano::runMotorForward(speed, duration_ms);
-  if (forward_completed) {
-    runRetraction();
+  if (platform_nano::waitMilliseconds(kActionLeadDelayMs)) {
+    processQueuedActionEvents();
   } else {
-    refreshStateFromHardware(millis());
+    processQueuedActionEvents();
   }
 
-  if (sound_started) {
-    platform_nano::waitForPlaybackFinish(kGameplayPlaybackTimeoutMs);
+  if (actionCanContinue()) {
+    const bool motion_completed = executeMotionPattern(motion_selection);
+    if (motion_completed && actionCanContinue()) {
+      (void)runRetraction();
+    }
   }
+
+  (void)waitForGameplayPlaybackTail(sound_started);
+  processQueuedActionEvents();
+  playPendingSpamReaction();
+  processQueuedActionEvents();
 
   const uint32_t end_ms = millis();
   if (g_app_context.runtime_status.case_closed) {
@@ -223,6 +472,11 @@ void handleButtonPressed(const uint32_t now_ms) {
     return;
   }
 
+  if (g_app_context.runtime_status.state == RuntimeState::ActionRunning) {
+    queueSpamReaction(now_ms);
+    return;
+  }
+
   if (g_app_context.runtime_status.state != RuntimeState::IdleReady) {
     return;
   }
@@ -231,12 +485,13 @@ void handleButtonPressed(const uint32_t now_ms) {
     return;
   }
 
+  recordPressActivity(now_ms);
   g_app_context.runtime_status.accepted_button_presses++;
   g_app_context.runtime_status.last_button_press_ms = now_ms;
 
   const ActionType resolved_action =
       (random(100) < kLoseChancePercent) ? ActionType::Lose : ActionType::Safe;
-  executeExtremeAction(resolved_action);
+  executeExtremeAction(resolved_action, now_ms);
 }
 
 void processInputEvent(const platform_nano::InputEvent& event) {
@@ -290,6 +545,8 @@ void updateOpenWarning(const uint32_t now_ms) {
 void setup() {
   randomSeed(analogRead(0));
   g_app_context.runtime_config = config::kDefaultRuntimeConfig;
+  domain_sound::resetSoundCatalogState();
+  domain_motion::reset(g_app_context.motion_selector_state);
   platform_nano::initializeHardware(g_app_context.runtime_config);
 
   const uint32_t now_ms = millis();
@@ -304,6 +561,12 @@ void setup() {
   g_app_context.runtime_status.last_button_press_ms = 0;
   g_app_context.runtime_status.lifecycle_action_generation = 0;
   g_app_context.runtime_status.last_lifecycle_action = ActionType::Startup;
+  g_app_context.motion_press_history.count = 0;
+  for (uint8_t index = 0; index < domain_motion::kMotionPressHistorySize; ++index) {
+    g_app_context.motion_press_history.timestamps[index] = 0;
+  }
+  g_app_context.pending_spam_reaction = false;
+  g_app_context.spam_reaction_played = false;
 
   if (inputs.case_closed) {
     playLifecycleFeedback(ActionType::Startup, readyStateForMode(g_app_context.runtime_config.game_mode));

@@ -24,6 +24,7 @@ struct SoundSelection {
   SoundItem item;
 };
 
+void resetSoundCatalogState();
 bool hasEnabledBaseGameplayCategory(const RuntimeConfig& config);
 
 SoundSelection chooseStartupSound(const RuntimeConfig& config, uint32_t roll);
