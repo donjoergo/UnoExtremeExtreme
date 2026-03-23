@@ -3,18 +3,13 @@
 #include <Arduino.h>
 
 #include "config/defaults.h"
+#include "domain_sound/sound_catalog.h"
 #include "platform_nano/hardware.h"
 
 namespace uno_extreme {
 namespace app_core {
 namespace {
 
-constexpr uint8_t kStartupFolder = 1;
-constexpr uint8_t kStartupSoundCount = 14;
-constexpr uint8_t kWinFolder = 3;
-constexpr uint8_t kWinSoundCount = 128;
-constexpr uint8_t kLoseFolder = 4;
-constexpr uint8_t kLoseSoundCount = 85;
 constexpr uint8_t kLoseChancePercent = 30;
 constexpr uint8_t kSafeForwardSpeed = 170;
 constexpr uint16_t kSafeForwardDurationMs = 140;
@@ -60,8 +55,44 @@ void recordLifecycleAction(const ActionType action_type) {
   g_app_context.runtime_status.lifecycle_action_generation++;
 }
 
-uint8_t randomSoundIndex(const uint8_t sound_count) {
-  return static_cast<uint8_t>(random(sound_count) + 1L);
+uint32_t nextSoundRoll() {
+  return (static_cast<uint32_t>(random(32768L)) << 16) |
+      static_cast<uint32_t>(random(32768L));
+}
+
+domain_sound::SoundSelection invalidSoundSelection() {
+  domain_sound::SoundSelection selection = {
+    false,
+    {0, 0, 0, SoundCategory::BaseNormal, 0, 0}
+  };
+  return selection;
+}
+
+domain_sound::SoundSelection chooseLifecycleSound(const ActionType action_type) {
+  const uint32_t roll = nextSoundRoll();
+
+  switch (action_type) {
+    case ActionType::Startup:
+      return domain_sound::chooseStartupSound(g_app_context.runtime_config, roll);
+    case ActionType::CaseOpened:
+    case ActionType::CaseClosed:
+    case ActionType::CaseOpenTooLong:
+      return domain_sound::chooseCaseEventSound(g_app_context.runtime_config, action_type, roll);
+    case ActionType::SpamReaction:
+      return domain_sound::chooseSpamReactionSound(g_app_context.runtime_config, roll);
+    default:
+      return invalidSoundSelection();
+  }
+}
+
+bool startSoundPlayback(const domain_sound::SoundSelection& selection) {
+  if (!selection.valid) {
+    return false;
+  }
+
+  return platform_nano::playFolderSound(
+      selection.item.folder_id,
+      selection.item.file_index);
 }
 
 void refreshStateFromHardware(const uint32_t now_ms) {
@@ -110,30 +141,35 @@ void updateReadyState(const uint32_t now_ms) {
   transitionToState(readyStateForMode(g_app_context.runtime_config.game_mode), now_ms);
 }
 
-void playLifecycleFeedback(const ActionType action_type) {
-  const uint32_t now_ms = millis();
-  transitionToState(RuntimeState::ActionRunning, now_ms);
+void playLifecycleFeedback(const ActionType action_type, const RuntimeState resume_state) {
   recordLifecycleAction(action_type);
 
-  if (platform_nano::playFolderSound(kStartupFolder, randomSoundIndex(kStartupSoundCount))) {
+  const domain_sound::SoundSelection selection = chooseLifecycleSound(action_type);
+  if (!selection.valid) {
+    transitionToState(resume_state, millis());
+    return;
+  }
+
+  transitionToState(RuntimeState::ActionRunning, millis());
+  if (startSoundPlayback(selection)) {
     platform_nano::waitForPlaybackFinish(kLifecyclePlaybackTimeoutMs);
   }
+
+  transitionToState(resume_state, millis());
 }
 
 void handleCaseOpened(const uint32_t now_ms) {
   g_app_context.runtime_status.case_closed = false;
   g_app_context.runtime_status.case_open_since_ms = now_ms;
   g_app_context.runtime_status.last_open_warning_ms = 0;
-  transitionToState(RuntimeState::MaintenanceOpen, now_ms);
-  recordLifecycleAction(ActionType::CaseOpened);
+  playLifecycleFeedback(ActionType::CaseOpened, RuntimeState::MaintenanceOpen);
 }
 
 void handleCaseClosed(const uint32_t now_ms) {
   g_app_context.runtime_status.case_closed = true;
   g_app_context.runtime_status.case_open_since_ms = 0;
   g_app_context.runtime_status.last_open_warning_ms = 0;
-  playLifecycleFeedback(ActionType::CaseClosed);
-  updateReadyState(now_ms);
+  playLifecycleFeedback(ActionType::CaseClosed, readyStateForMode(g_app_context.runtime_config.game_mode));
 }
 
 void runRetraction() {
@@ -151,12 +187,12 @@ void executeExtremeAction(const ActionType resolved_action) {
   transitionToState(RuntimeState::ActionRunning, now_ms);
 
   const bool is_lose = resolved_action == ActionType::Lose;
-  const uint8_t folder = is_lose ? kLoseFolder : kWinFolder;
-  const uint8_t sound_count = is_lose ? kLoseSoundCount : kWinSoundCount;
   const uint8_t speed = is_lose ? kLoseForwardSpeed : kSafeForwardSpeed;
   const uint16_t duration_ms = is_lose ? kLoseForwardDurationMs : kSafeForwardDurationMs;
 
-  const bool sound_started = platform_nano::playFolderSound(folder, randomSoundIndex(sound_count));
+  const domain_sound::SoundSelection sound_selection =
+      domain_sound::chooseGameplaySound(g_app_context.runtime_config, resolved_action, nextSoundRoll());
+  const bool sound_started = startSoundPlayback(sound_selection);
   if (sound_started) {
     (void)platform_nano::waitForPlaybackStart(250);
   }
@@ -237,7 +273,7 @@ void updateOpenWarning(const uint32_t now_ms) {
 
     transitionToState(RuntimeState::WarningOpenTooLong, now_ms);
     g_app_context.runtime_status.last_open_warning_ms = now_ms;
-    recordLifecycleAction(ActionType::CaseOpenTooLong);
+    playLifecycleFeedback(ActionType::CaseOpenTooLong, RuntimeState::WarningOpenTooLong);
     return;
   }
 
@@ -246,7 +282,7 @@ void updateOpenWarning(const uint32_t now_ms) {
   }
 
   g_app_context.runtime_status.last_open_warning_ms = now_ms;
-  recordLifecycleAction(ActionType::CaseOpenTooLong);
+  playLifecycleFeedback(ActionType::CaseOpenTooLong, RuntimeState::WarningOpenTooLong);
 }
 
 }  // namespace
@@ -270,8 +306,7 @@ void setup() {
   g_app_context.runtime_status.last_lifecycle_action = ActionType::Startup;
 
   if (inputs.case_closed) {
-    playLifecycleFeedback(ActionType::Startup);
-    updateReadyState(now_ms);
+    playLifecycleFeedback(ActionType::Startup, readyStateForMode(g_app_context.runtime_config.game_mode));
   } else {
     transitionToState(RuntimeState::MaintenanceOpen, now_ms);
   }
