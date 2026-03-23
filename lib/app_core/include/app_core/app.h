@@ -14,12 +14,9 @@ struct RuntimeStatus {
   RuntimeState state;
   bool boot_completed;
   bool case_closed;
-  uint32_t last_transition_ms;
   uint32_t case_open_since_ms;
   uint32_t last_open_warning_ms;
-  uint32_t accepted_button_presses;
-  uint32_t last_button_press_ms;
-  uint32_t lifecycle_action_generation;
+  uint16_t accepted_button_presses;
   ActionType last_lifecycle_action;
 };
 

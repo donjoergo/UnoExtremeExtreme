@@ -10,6 +10,10 @@
 namespace uno_extreme {
 namespace domain_sound {
 
+constexpr uint8_t kNoVolumeOverride = 0xFFu;
+constexpr uint16_t kNoMotionPatternId = 0xFFFFu;
+constexpr uint8_t kNoSequenceGroup = 0xFFu;
+
 struct SoundItem {
   uint16_t sound_id;
   uint8_t folder_id;
@@ -17,12 +21,26 @@ struct SoundItem {
   SoundCategory category;
   ActionMask valid_actions;
   uint8_t weight;
+  uint16_t wait_before_ms;
+  uint16_t wait_after_ms;
+  uint8_t volume_override;
+  uint16_t motion_pattern_id;
+  uint8_t predecessor_group;
+  uint8_t follow_up_group;
 };
 
 struct SoundSelection {
   bool valid;
   SoundItem item;
 };
+
+constexpr bool hasVolumeOverride(const SoundItem& item) {
+  return item.volume_override != kNoVolumeOverride;
+}
+
+constexpr bool hasMotionPatternBinding(const SoundItem& item) {
+  return item.motion_pattern_id != kNoMotionPatternId;
+}
 
 void resetSoundCatalogState();
 bool hasEnabledBaseGameplayCategory(const RuntimeConfig& config);

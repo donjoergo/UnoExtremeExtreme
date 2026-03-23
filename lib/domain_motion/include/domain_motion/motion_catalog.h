@@ -49,7 +49,7 @@ struct MotionSelection {
 };
 
 struct MotionPressHistory {
-  uint32_t timestamps[kMotionPressHistorySize];
+  uint16_t timestamps[kMotionPressHistorySize];
   uint8_t count;
 };
 
@@ -61,6 +61,7 @@ struct MotionSelectorState {
 void reset(MotionSelectorState& state);
 void recordPress(MotionPressHistory& history, uint32_t timestamp_ms);
 uint8_t computeIntensity(const RuntimeConfig& config, const MotionPressHistory& history, uint32_t now_ms);
+MotionSelection choosePatternById(uint16_t pattern_id, uint8_t intensity_percent);
 MotionSelection choosePattern(
     ActionType result_action,
     uint32_t roll,

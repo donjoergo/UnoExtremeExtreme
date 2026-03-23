@@ -18,42 +18,44 @@ constexpr SoundCategoryMask kDefaultEnabledCategories =
     toSoundCategoryMask(SoundCategory::CaseEvents) |
     toSoundCategoryMask(SoundCategory::SpamReactions);
 
-constexpr RuntimeConfig kDefaultRuntimeConfig = {
-  kRuntimeConfigSchemaVersion,
-  GameMode::Extreme,
-  kDefaultEnabledCategories,
-  {
-    0,
+constexpr RuntimeConfig defaultRuntimeConfig() {
+  return RuntimeConfig{
+    kRuntimeConfigSchemaVersion,
+    GameMode::Extreme,
+    kDefaultEnabledCategories,
+    {
+      0,
+      100,
+      100,
+      100,
+      0,
+      0,
+      0,
+      0,
+      0,
+      100,
+      100
+    },
+    20,
+    40,
+    60,
+    1500,
+    {
+      {2, 85},
+      {3, 70},
+      {4, 55},
+      {5, 40}
+    },
+    10000UL,
+    15000UL,
+    150,
     100,
-    100,
-    100,
-    0,
-    0,
-    0,
-    0,
-    0,
-    100,
-    100
-  },
-  20,
-  40,
-  60,
-  1500,
-  {
-    {2, 85},
-    {3, 70},
-    {4, 55},
-    {5, 40}
-  },
-  10000UL,
-  15000UL,
-  150,
-  100,
-  {
-    {0, 20},
-    {85, 145}
-  }
-};
+    {
+      {0, 20},
+      {85, 145}
+    }
+  };
+}
 
 static_assert(kGameModeCount == 3u, "Unexpected GameMode count");
 static_assert(kActionTypeCount == 10u, "Unexpected ActionType count");

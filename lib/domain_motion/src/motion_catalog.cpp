@@ -1,76 +1,66 @@
 #include "domain_motion/motion_catalog.h"
 
+#include <avr/pgmspace.h>
+
 namespace uno_extreme {
 namespace domain_motion {
 namespace {
-
-struct MotionPatternEntry {
-  MotionPattern pattern;
-};
 
 constexpr ActionMask kSafeMask = toActionMask(ActionType::Safe);
 constexpr ActionMask kLoseMask = toActionMask(ActionType::Lose);
 constexpr ActionMask kSafeOrLoseMask = kSafeMask | kLoseMask;
 
-constexpr MotionPatternEntry kMotionPatterns[kMotionPatternCount] = {
+const MotionPattern kMotionPatterns[kMotionPatternCount] PROGMEM = {
   {
+    1001,
+    MotionPatternKind::SplitEject,
+    kSafeOrLoseMask,
+    40,
+    3,
     {
-      1001,
-      MotionPatternKind::SplitEject,
-      kSafeOrLoseMask,
-      40,
-      3,
-      {
-        {MotionDirection::Forward, 220, 120, 30},
-        {MotionDirection::Stop, 0, 60, 20},
-        {MotionDirection::Forward, 180, 80, 0},
-        {MotionDirection::Stop, 0, 0, 0}
-      }
+      {MotionDirection::Forward, 220, 120, 30},
+      {MotionDirection::Stop, 0, 60, 20},
+      {MotionDirection::Forward, 180, 80, 0},
+      {MotionDirection::Stop, 0, 0, 0}
     }
   },
   {
+    1002,
+    MotionPatternKind::VariableSpeed,
+    kSafeOrLoseMask,
+    30,
+    3,
     {
-      1002,
-      MotionPatternKind::VariableSpeed,
-      kSafeOrLoseMask,
-      30,
-      3,
-      {
-        {MotionDirection::Forward, 140, 80, 10},
-        {MotionDirection::Forward, 180, 80, 10},
-        {MotionDirection::Forward, 220, 90, 0},
-        {MotionDirection::Stop, 0, 0, 0}
-      }
+      {MotionDirection::Forward, 140, 80, 10},
+      {MotionDirection::Forward, 180, 80, 10},
+      {MotionDirection::Forward, 220, 90, 0},
+      {MotionDirection::Stop, 0, 0, 0}
     }
   },
   {
+    1003,
+    MotionPatternKind::Stutter,
+    kLoseMask,
+    20,
+    4,
     {
-      1003,
-      MotionPatternKind::Stutter,
-      kLoseMask,
-      20,
-      4,
-      {
-        {MotionDirection::Forward, 160, 45, 15},
-        {MotionDirection::Stop, 0, 35, 20},
-        {MotionDirection::Forward, 165, 45, 15},
-        {MotionDirection::Forward, 210, 70, 0}
-      }
+      {MotionDirection::Forward, 160, 45, 15},
+      {MotionDirection::Stop, 0, 35, 20},
+      {MotionDirection::Forward, 165, 45, 15},
+      {MotionDirection::Forward, 210, 70, 0}
     }
   },
   {
+    1004,
+    MotionPatternKind::FakeFault,
+    kSafeMask,
+    10,
+    4,
     {
-      1004,
-      MotionPatternKind::FakeFault,
-      kSafeMask,
-      10,
-      4,
-      {
-        {MotionDirection::Forward, 200, 70, 10},
-        {MotionDirection::Stop, 0, 140, 30},
-        {MotionDirection::Forward, 120, 40, 20},
-        {MotionDirection::Forward, 220, 80, 0}
-      }
+      {MotionDirection::Forward, 200, 70, 10},
+      {MotionDirection::Stop, 0, 140, 30},
+      {MotionDirection::Forward, 120, 40, 20},
+      {MotionDirection::Forward, 220, 80, 0}
     }
   }
 };
@@ -78,11 +68,17 @@ constexpr MotionPatternEntry kMotionPatterns[kMotionPatternCount] = {
 static_assert(kMotionPatternCount == 4u, "Unexpected motion pattern count");
 static_assert(kMotionPatternMaxSegments == 4u, "Unexpected motion segment capacity");
 
+MotionPattern readMotionPattern(const uint8_t index) {
+  MotionPattern pattern;
+  memcpy_P(&pattern, &kMotionPatterns[index], sizeof(pattern));
+  return pattern;
+}
+
 uint8_t eligibleMaskForAction(const ActionType result_action) {
   uint8_t mask = 0;
 
   for (uint8_t index = 0; index < kMotionPatternCount; ++index) {
-    const MotionPattern& pattern = kMotionPatterns[index].pattern;
+    const MotionPattern pattern = readMotionPattern(index);
     if ((pattern.valid_actions & toActionMask(result_action)) != 0) {
       mask |= static_cast<uint8_t>(1u << index);
     }
@@ -132,8 +128,9 @@ uint8_t countPressesWithinWindow(
   }
 
   uint8_t count = 0;
+  const uint16_t now_tick = static_cast<uint16_t>(now_ms);
   for (uint8_t index = 0; index < history.count; ++index) {
-    const uint32_t press_age_ms = now_ms - history.timestamps[index];
+    const uint16_t press_age_ms = static_cast<uint16_t>(now_tick - history.timestamps[index]);
     if (press_age_ms <= config.rapid_press_window_ms) {
       count++;
     }
@@ -177,8 +174,9 @@ void reset(MotionSelectorState& state) {
 }
 
 void recordPress(MotionPressHistory& history, const uint32_t timestamp_ms) {
+  const uint16_t stored_timestamp = static_cast<uint16_t>(timestamp_ms);
   if (history.count < kMotionPressHistorySize) {
-    history.timestamps[history.count] = timestamp_ms;
+    history.timestamps[history.count] = stored_timestamp;
     history.count++;
     return;
   }
@@ -186,7 +184,7 @@ void recordPress(MotionPressHistory& history, const uint32_t timestamp_ms) {
   for (uint8_t index = 1; index < kMotionPressHistorySize; ++index) {
     history.timestamps[index - 1] = history.timestamps[index];
   }
-  history.timestamps[kMotionPressHistorySize - 1] = timestamp_ms;
+  history.timestamps[kMotionPressHistorySize - 1] = stored_timestamp;
 }
 
 uint8_t computeIntensity(
@@ -240,7 +238,7 @@ MotionSelection choosePattern(
       continue;
     }
 
-    const MotionPattern& pattern = kMotionPatterns[index].pattern;
+    const MotionPattern pattern = readMotionPattern(index);
     if (!isActionEligible(pattern, result_action)) {
       continue;
     }
@@ -262,7 +260,7 @@ MotionSelection choosePattern(
       continue;
     }
 
-    const MotionPattern& pattern = kMotionPatterns[index].pattern;
+    const MotionPattern pattern = readMotionPattern(index);
     if (!isActionEligible(pattern, result_action)) {
       continue;
     }
@@ -275,6 +273,17 @@ MotionSelection choosePattern(
   }
 
   *remaining_mask = 0;
+  return invalidSelection(intensity_percent);
+}
+
+MotionSelection choosePatternById(const uint16_t pattern_id, const uint8_t intensity_percent) {
+  for (uint8_t index = 0; index < kMotionPatternCount; ++index) {
+    const MotionPattern pattern = readMotionPattern(index);
+    if (pattern.pattern_id == pattern_id) {
+      return makeSelection(pattern, intensity_percent);
+    }
+  }
+
   return invalidSelection(intensity_percent);
 }
 

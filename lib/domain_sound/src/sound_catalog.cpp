@@ -1,5 +1,6 @@
 #include "domain_sound/sound_catalog.h"
 
+#include <avr/pgmspace.h>
 #include <stddef.h>
 
 namespace uno_extreme {
@@ -17,9 +18,14 @@ enum class PoolStateId : uint8_t {
   Count = 7
 };
 
-constexpr uint8_t kMaxPoolFiles = 128;
 constexpr uint8_t kPoolStateCount = static_cast<uint8_t>(PoolStateId::Count);
-constexpr uint8_t kPoolBitsetBytes = kMaxPoolFiles / 8;
+constexpr uint8_t kStartupPoolBitsetBytes = 2;
+constexpr uint8_t kCaseEventPoolBitsetBytes = 5;
+constexpr uint8_t kSpamReactionPoolBitsetBytes = 1;
+constexpr uint8_t kGameplayBaseFunnySafePoolBitsetBytes = 16;
+constexpr uint8_t kGameplayBaseFunnyLosePoolBitsetBytes = 11;
+constexpr uint8_t kGameplayBaseTtsSafePoolBitsetBytes = 3;
+constexpr uint8_t kGameplayBaseTtsLosePoolBitsetBytes = 2;
 
 struct SoundPool {
   PoolStateId state_id;
@@ -29,15 +35,19 @@ struct SoundPool {
   SoundCategory category;
   ActionMask valid_actions;
   uint8_t weight;
+  uint16_t wait_before_ms;
+  uint16_t wait_after_ms;
+  uint8_t volume_override;
+  uint16_t motion_pattern_id;
+  uint8_t predecessor_group;
+  uint8_t follow_up_group;
 };
 
-struct PoolState {
-  uint8_t used_bits[kPoolBitsetBytes];
+struct PoolMeta {
   uint8_t used_count;
   uint8_t last_file_index;
 };
 
-static_assert(kMaxPoolFiles % 8 == 0, "Pool bitset must be byte aligned");
 static_assert(kPoolStateCount == 7u, "Unexpected sound pool state count");
 
 constexpr SoundCategoryMask kGameplayCategoryMask =
@@ -60,29 +70,43 @@ constexpr ActionMask kLoseActions = toActionMask(ActionType::Lose);
 
 // Transitional mapping: these folders point at the legacy Nano asset pools
 // until the V2 SD card layout is physically provisioned.
-constexpr SoundPool kStartupPools[] = {
-  {PoolStateId::Startup, 1001, 1, 14, SoundCategory::Startup, kStartupActions, 100},
+const SoundPool kStartupPools[] PROGMEM = {
+  {PoolStateId::Startup, 1001, 1, 14, SoundCategory::Startup, kStartupActions, 100,
+      0, 120, kNoVolumeOverride, kNoMotionPatternId, kNoSequenceGroup, kNoSequenceGroup},
 };
 
-constexpr SoundPool kCaseEventPools[] = {
-  {PoolStateId::CaseEvents, 2001, 2, 36, SoundCategory::CaseEvents, kCaseEventActions, 100},
+const SoundPool kCaseEventPools[] PROGMEM = {
+  {PoolStateId::CaseEvents, 2001, 2, 36, SoundCategory::CaseEvents, kCaseEventActions, 100,
+      0, 80, 18, kNoMotionPatternId, kNoSequenceGroup, kNoSequenceGroup},
 };
 
-constexpr SoundPool kSpamReactionPools[] = {
-  {PoolStateId::SpamReactions, 3001, 6, 5, SoundCategory::SpamReactions, kSpamReactionActions, 100},
+const SoundPool kSpamReactionPools[] PROGMEM = {
+  {PoolStateId::SpamReactions, 3001, 6, 5, SoundCategory::SpamReactions, kSpamReactionActions, 100,
+      0, 40, 24, kNoMotionPatternId, kNoSequenceGroup, kNoSequenceGroup},
 };
 
-constexpr SoundPool kGameplayPools[] = {
-  {PoolStateId::GameplayBaseFunnySafe, 4001, 3, 128, SoundCategory::BaseFunny, kSafeActions, 100},
-  {PoolStateId::GameplayBaseFunnyLose, 4002, 4, 85, SoundCategory::BaseFunny, kLoseActions, 100},
-  {PoolStateId::GameplayBaseTtsSafe, 5001, 8, 24, SoundCategory::BaseTts, kSafeActions, 100},
-  {PoolStateId::GameplayBaseTtsLose, 5002, 9, 13, SoundCategory::BaseTts, kLoseActions, 100},
+const SoundPool kGameplayPools[] PROGMEM = {
+  {PoolStateId::GameplayBaseFunnySafe, 4001, 3, 128, SoundCategory::BaseFunny, kSafeActions, 100,
+      140, 20, kNoVolumeOverride, kNoMotionPatternId, kNoSequenceGroup, kNoSequenceGroup},
+  {PoolStateId::GameplayBaseFunnyLose, 4002, 4, 85, SoundCategory::BaseFunny, kLoseActions, 100,
+      80, 60, 22, kNoMotionPatternId, kNoSequenceGroup, kNoSequenceGroup},
+  {PoolStateId::GameplayBaseTtsSafe, 5001, 8, 24, SoundCategory::BaseTts, kSafeActions, 100,
+      220, 0, 18, 1002, kNoSequenceGroup, kNoSequenceGroup},
+  {PoolStateId::GameplayBaseTtsLose, 5002, 9, 13, SoundCategory::BaseTts, kLoseActions, 100,
+      100, 120, 24, 1003, kNoSequenceGroup, kNoSequenceGroup},
 };
 
 static_assert(kSoundCategoryCount == 11u, "Unexpected SoundCategory count");
 static_assert(kCategoryWeightCount == kSoundCategoryCount, "Category weights must track categories");
 
-PoolState g_pool_states[kPoolStateCount];
+PoolMeta g_pool_meta[kPoolStateCount];
+uint8_t g_startup_pool_bits[kStartupPoolBitsetBytes];
+uint8_t g_case_event_pool_bits[kCaseEventPoolBitsetBytes];
+uint8_t g_spam_reaction_pool_bits[kSpamReactionPoolBitsetBytes];
+uint8_t g_gameplay_base_funny_safe_pool_bits[kGameplayBaseFunnySafePoolBitsetBytes];
+uint8_t g_gameplay_base_funny_lose_pool_bits[kGameplayBaseFunnyLosePoolBitsetBytes];
+uint8_t g_gameplay_base_tts_safe_pool_bits[kGameplayBaseTtsSafePoolBitsetBytes];
+uint8_t g_gameplay_base_tts_lose_pool_bits[kGameplayBaseTtsLosePoolBitsetBytes];
 
 bool isGameplayCategory(const SoundCategory category) {
   return category == SoundCategory::BaseNormal ||
@@ -94,46 +118,108 @@ bool hasBaseCategoryInMask(const SoundCategoryMask mask) {
   return (mask & kGameplayCategoryMask) != 0;
 }
 
-PoolState& poolState(const PoolStateId state_id) {
-  return g_pool_states[static_cast<uint8_t>(state_id)];
+PoolMeta& poolMeta(const PoolStateId state_id) {
+  return g_pool_meta[static_cast<uint8_t>(state_id)];
 }
 
-void clearPoolState(PoolState& state) {
-  for (uint8_t index = 0; index < kPoolBitsetBytes; ++index) {
-    state.used_bits[index] = 0;
+uint8_t* poolBits(const PoolStateId state_id) {
+  if (state_id == PoolStateId::Startup) {
+    return g_startup_pool_bits;
   }
-  state.used_count = 0;
+  if (state_id == PoolStateId::CaseEvents) {
+    return g_case_event_pool_bits;
+  }
+  if (state_id == PoolStateId::SpamReactions) {
+    return g_spam_reaction_pool_bits;
+  }
+  if (state_id == PoolStateId::GameplayBaseFunnySafe) {
+    return g_gameplay_base_funny_safe_pool_bits;
+  }
+  if (state_id == PoolStateId::GameplayBaseFunnyLose) {
+    return g_gameplay_base_funny_lose_pool_bits;
+  }
+  if (state_id == PoolStateId::GameplayBaseTtsSafe) {
+    return g_gameplay_base_tts_safe_pool_bits;
+  }
+  if (state_id == PoolStateId::GameplayBaseTtsLose) {
+    return g_gameplay_base_tts_lose_pool_bits;
+  }
+  return nullptr;
 }
 
-bool isFileUsed(const PoolState& state, const uint8_t file_index) {
-  if (file_index == 0 || file_index > kMaxPoolFiles) {
+uint8_t poolBitsetBytes(const PoolStateId state_id) {
+  if (state_id == PoolStateId::Startup) {
+    return kStartupPoolBitsetBytes;
+  }
+  if (state_id == PoolStateId::CaseEvents) {
+    return kCaseEventPoolBitsetBytes;
+  }
+  if (state_id == PoolStateId::SpamReactions) {
+    return kSpamReactionPoolBitsetBytes;
+  }
+  if (state_id == PoolStateId::GameplayBaseFunnySafe) {
+    return kGameplayBaseFunnySafePoolBitsetBytes;
+  }
+  if (state_id == PoolStateId::GameplayBaseFunnyLose) {
+    return kGameplayBaseFunnyLosePoolBitsetBytes;
+  }
+  if (state_id == PoolStateId::GameplayBaseTtsSafe) {
+    return kGameplayBaseTtsSafePoolBitsetBytes;
+  }
+  if (state_id == PoolStateId::GameplayBaseTtsLose) {
+    return kGameplayBaseTtsLosePoolBitsetBytes;
+  }
+  return 0;
+}
+
+SoundPool readPool(const SoundPool* pools, const size_t index) {
+  SoundPool pool;
+  memcpy_P(&pool, &pools[index], sizeof(pool));
+  return pool;
+}
+
+void clearPoolState(const PoolStateId state_id) {
+  PoolMeta& meta = poolMeta(state_id);
+  uint8_t* const bits = poolBits(state_id);
+  const uint8_t bitset_bytes = poolBitsetBytes(state_id);
+  for (uint8_t index = 0; index < bitset_bytes; ++index) {
+    bits[index] = 0;
+  }
+  meta.used_count = 0;
+}
+
+bool isFileUsed(const PoolStateId state_id, const uint8_t file_index, const uint8_t file_count) {
+  if (file_index == 0 || file_index > file_count) {
     return false;
   }
 
+  const uint8_t* const bits = poolBits(state_id);
   const uint8_t bit_index = static_cast<uint8_t>(file_index - 1u);
   const uint8_t byte_index = static_cast<uint8_t>(bit_index / 8u);
   const uint8_t bit_mask = static_cast<uint8_t>(1u << (bit_index % 8u));
-  return (state.used_bits[byte_index] & bit_mask) != 0;
+  return (bits[byte_index] & bit_mask) != 0;
 }
 
-void markFileUsed(PoolState& state, const uint8_t file_index) {
-  if (file_index == 0 || file_index > kMaxPoolFiles) {
+void markFileUsed(const PoolStateId state_id, const uint8_t file_index, const uint8_t file_count) {
+  if (file_index == 0 || file_index > file_count) {
     return;
   }
 
+  PoolMeta& meta = poolMeta(state_id);
+  uint8_t* const bits = poolBits(state_id);
   const uint8_t bit_index = static_cast<uint8_t>(file_index - 1u);
   const uint8_t byte_index = static_cast<uint8_t>(bit_index / 8u);
   const uint8_t bit_mask = static_cast<uint8_t>(1u << (bit_index % 8u));
-  if ((state.used_bits[byte_index] & bit_mask) == 0) {
-    state.used_bits[byte_index] |= bit_mask;
-    if (state.used_count < 255u) {
-      state.used_count++;
+  if ((bits[byte_index] & bit_mask) == 0) {
+    bits[byte_index] |= bit_mask;
+    if (meta.used_count < 255u) {
+      meta.used_count++;
     }
   }
 }
 
-bool isFreshPool(const PoolState& state) {
-  return state.used_count == 0;
+bool isFreshPool(const PoolStateId state_id) {
+  return poolMeta(state_id).used_count == 0;
 }
 
 bool isEnabledCategory(const RuntimeConfig& config, const SoundCategory category, const bool allow_fallback) {
@@ -183,19 +269,20 @@ uint8_t chooseFileIndex(const SoundPool& pool, const uint32_t roll) {
     return 0;
   }
 
-  PoolState& state = poolState(pool.state_id);
-  if (state.used_count >= pool.file_count) {
-    clearPoolState(state);
+  PoolMeta& meta = poolMeta(pool.state_id);
+  if (meta.used_count >= pool.file_count) {
+    clearPoolState(pool.state_id);
   }
 
   uint8_t eligible_count = 0;
-  const bool avoid_last = isFreshPool(state) && pool.file_count > 1u && state.last_file_index > 0u;
+  const bool avoid_last =
+      isFreshPool(pool.state_id) && pool.file_count > 1u && meta.last_file_index > 0u;
   for (uint8_t file_index = 1; file_index <= pool.file_count; ++file_index) {
-    if (isFileUsed(state, file_index)) {
+    if (isFileUsed(pool.state_id, file_index, pool.file_count)) {
       continue;
     }
 
-    if (avoid_last && file_index == state.last_file_index) {
+    if (avoid_last && file_index == meta.last_file_index) {
       continue;
     }
 
@@ -203,9 +290,9 @@ uint8_t chooseFileIndex(const SoundPool& pool, const uint32_t roll) {
   }
 
   if (eligible_count == 0) {
-    clearPoolState(state);
+    clearPoolState(pool.state_id);
     for (uint8_t file_index = 1; file_index <= pool.file_count; ++file_index) {
-      if (avoid_last && pool.file_count > 1u && file_index == state.last_file_index) {
+      if (avoid_last && pool.file_count > 1u && file_index == meta.last_file_index) {
         continue;
       }
       eligible_count++;
@@ -219,26 +306,26 @@ uint8_t chooseFileIndex(const SoundPool& pool, const uint32_t roll) {
   const uint8_t pick = static_cast<uint8_t>(roll % eligible_count);
   uint8_t seen = 0;
   for (uint8_t file_index = 1; file_index <= pool.file_count; ++file_index) {
-    if (isFileUsed(state, file_index)) {
+    if (isFileUsed(pool.state_id, file_index, pool.file_count)) {
       continue;
     }
 
-    if (avoid_last && file_index == state.last_file_index) {
+    if (avoid_last && file_index == meta.last_file_index) {
       continue;
     }
 
     if (seen == pick) {
-      markFileUsed(state, file_index);
-      state.last_file_index = file_index;
+      markFileUsed(pool.state_id, file_index, pool.file_count);
+      meta.last_file_index = file_index;
       return file_index;
     }
     seen++;
   }
 
   for (uint8_t file_index = 1; file_index <= pool.file_count; ++file_index) {
-    if (!isFileUsed(state, file_index)) {
-      markFileUsed(state, file_index);
-      state.last_file_index = file_index;
+    if (!isFileUsed(pool.state_id, file_index, pool.file_count)) {
+      markFileUsed(pool.state_id, file_index, pool.file_count);
+      meta.last_file_index = file_index;
       return file_index;
     }
   }
@@ -247,13 +334,35 @@ uint8_t chooseFileIndex(const SoundPool& pool, const uint32_t roll) {
 }
 
 SoundSelection makeSelection(const SoundPool& pool, const uint32_t roll) {
-  SoundSelection selection = {true, {0, 0, 0, SoundCategory::BaseNormal, 0, 0}};
+  SoundSelection selection = {
+    true,
+    {
+      0,
+      0,
+      0,
+      SoundCategory::BaseNormal,
+      0,
+      0,
+      0,
+      0,
+      kNoVolumeOverride,
+      kNoMotionPatternId,
+      kNoSequenceGroup,
+      kNoSequenceGroup
+    }
+  };
   selection.item.sound_id = pool.sound_id;
   selection.item.folder_id = pool.folder_id;
   selection.item.file_index = chooseFileIndex(pool, roll);
   selection.item.category = pool.category;
   selection.item.valid_actions = pool.valid_actions;
   selection.item.weight = pool.weight;
+  selection.item.wait_before_ms = pool.wait_before_ms;
+  selection.item.wait_after_ms = pool.wait_after_ms;
+  selection.item.volume_override = pool.volume_override;
+  selection.item.motion_pattern_id = pool.motion_pattern_id;
+  selection.item.predecessor_group = pool.predecessor_group;
+  selection.item.follow_up_group = pool.follow_up_group;
   return selection;
 }
 
@@ -276,7 +385,7 @@ SoundSelection chooseFromPools(
   uint32_t total_weight = 0;
 
   for (size_t index = 0; index < PoolCount; ++index) {
-    const SoundPool& pool = pools[index];
+    const SoundPool pool = readPool(pools, index);
     if (!matchesAction(pool, action_type)) {
       continue;
     }
@@ -298,7 +407,23 @@ SoundSelection chooseFromPools(
   }
 
   if (total_weight == 0) {
-    SoundSelection invalid = {false, {0, 0, 0, SoundCategory::BaseNormal, 0, 0}};
+    SoundSelection invalid = {
+      false,
+      {
+        0,
+        0,
+        0,
+        SoundCategory::BaseNormal,
+        0,
+        0,
+        0,
+        0,
+        kNoVolumeOverride,
+        kNoMotionPatternId,
+        kNoSequenceGroup,
+        kNoSequenceGroup
+      }
+    };
     return invalid;
   }
 
@@ -306,7 +431,7 @@ SoundSelection chooseFromPools(
   uint32_t accumulated = 0;
 
   for (size_t index = 0; index < PoolCount; ++index) {
-    const SoundPool& pool = pools[index];
+    const SoundPool pool = readPool(pools, index);
     if (!matchesAction(pool, action_type)) {
       continue;
     }
@@ -331,7 +456,23 @@ SoundSelection chooseFromPools(
     }
   }
 
-  SoundSelection invalid = {false, {0, 0, 0, SoundCategory::BaseNormal, 0, 0}};
+  SoundSelection invalid = {
+    false,
+    {
+      0,
+      0,
+      0,
+      SoundCategory::BaseNormal,
+      0,
+      0,
+      0,
+      0,
+      kNoVolumeOverride,
+      kNoMotionPatternId,
+      kNoSequenceGroup,
+      kNoSequenceGroup
+    }
+  };
   return invalid;
 }
 
@@ -355,7 +496,23 @@ SoundSelection chooseSpamReactionSound(const RuntimeConfig& config, const uint32
 
 SoundSelection chooseGameplaySound(const RuntimeConfig& config, const ActionType result_action, const uint32_t roll) {
   if (result_action != ActionType::Safe && result_action != ActionType::Lose) {
-    SoundSelection invalid = {false, {0, 0, 0, SoundCategory::BaseNormal, 0, 0}};
+    SoundSelection invalid = {
+      false,
+      {
+        0,
+        0,
+        0,
+        SoundCategory::BaseNormal,
+        0,
+        0,
+        0,
+        0,
+        kNoVolumeOverride,
+        kNoMotionPatternId,
+        kNoSequenceGroup,
+        kNoSequenceGroup
+      }
+    };
     return invalid;
   }
 
@@ -381,8 +538,9 @@ SoundSelection chooseGameplaySound(const RuntimeConfig& config, const ActionType
 
 void resetSoundCatalogState() {
   for (uint8_t index = 0; index < kPoolStateCount; ++index) {
-    clearPoolState(g_pool_states[index]);
-    g_pool_states[index].last_file_index = 0;
+    const PoolStateId state_id = static_cast<PoolStateId>(index);
+    clearPoolState(state_id);
+    poolMeta(state_id).last_file_index = 0;
   }
 }
 

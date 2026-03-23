@@ -46,7 +46,7 @@ void setLedOff();
 void setLedRgb(uint8_t red, uint8_t green, uint8_t blue);
 void applyFeedback(FeedbackState state);
 void setMasterVolume(uint8_t volume);
-bool playFolderSound(uint8_t folder, uint8_t file_index);
+bool playFolderSound(uint8_t folder, uint8_t file_index, uint8_t volume_override = 0xFFu);
 bool waitForPlaybackStart(uint32_t timeout_ms);
 void waitForPlaybackFinish(uint32_t timeout_ms);
 bool isPlaybackActive();
