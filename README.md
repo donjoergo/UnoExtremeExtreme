@@ -1,4 +1,4 @@
-![UNO](https://github.com/donjoergo/UnoExtremeExtreme/blob/master/Images/UNO_Extreme.jpg "UNO ExtremeExtreme")
+![UNO](/Images/UNO_Extreme.jpg "UNO ExtremeExtreme")
 
 ### This project turns an Arduino Nano into an advanced controller board for the table game "UNO Extreme / Attack"
 
@@ -23,7 +23,10 @@ This project is now configured for PlatformIO via [platformio.ini](platformio.in
    `pio device monitor`
 
 The required libraries (`DFRobotDFPlayerMini` and `FastLED`) are declared in `platformio.ini` and will be installed automatically by PlatformIO.
-<br /><br />
-I also made an APP with Thunkable, with which you can change volume, mode and other settings :)
-  
+
+## App
+
+Made an APP with Thunkable, with which you can change volume, mode and other settings :)
+
+## 3D Files
 You can find the file for the button also on <a href="https://www.thingiverse.com/thing:2492998">Thingiverse</a>.
